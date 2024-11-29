@@ -1,2 +1,5 @@
 opencv-python
 google-cloud-texttospeech
+Flask
+boto3
+google-generativeai
