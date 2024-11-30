@@ -1,7 +1,7 @@
 import google.generativeai as genai
 import time
 import json
-import cv2
+import ffmpeg
 from typing import Dict, Any
 import dotenv
 from flask import Flask, request, jsonify
@@ -12,14 +12,30 @@ from PIL import Image
 app = Flask(__name__)
 
 def get_video_metadata(video_path: str) -> Dict[str, Any]:
-    cap = cv2.VideoCapture(video_path)
-    metadata = {
-        "duration": float(cap.get(cv2.CAP_PROP_FRAME_COUNT) / cap.get(cv2.CAP_PROP_FPS)),
-        "fps": float(cap.get(cv2.CAP_PROP_FPS)),
-        "resolution": f"{int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}"
-    }
-    cap.release()
-    return metadata
+    try:
+        probe = ffmpeg.probe(video_path)
+        video_info = next(s for s in probe['streams'] if s['codec_type'] == 'video')
+        duration = float(probe['format'].get('duration', 0))
+        fps = eval(video_info.get('r_frame_rate', '0/1'))
+        width = int(video_info.get('width', 0))
+        height = int(video_info.get('height', 0))
+        
+        metadata = {
+            "duration": duration,
+            "fps": float(fps),
+            "resolution": f"{width}x{height}"
+        }
+        return metadata
+    except ffmpeg.Error as e:
+        print(f"FFmpeg error: {e}")
+        return {}
+
+def get_image_metadata(image_path: str) -> Dict[str, Any]:
+    with Image.open(image_path) as img:
+        metadata = {
+            "resolution": f"{img.width}x{img.height}",
+            "format": img.format
+        }
 
 def get_image_metadata(image_path: str) -> Dict[str, Any]:
     with Image.open(image_path) as img:
@@ -44,7 +60,7 @@ def download_files_from_s3_folder(s3_folder_link: str, download_dir: str) -> Non
 def generate_story(file_path: str, location: str, api_key: str, model_name: str = "gemini-1.5-pro") -> Dict[str, Any]:
     try:
         # Configure Gemini
-        genai.configure(api_key=api_key)
+        genai.configure(api_key="")
         model = genai.GenerativeModel(model_name)
 
         # Determine if the file is a video or an image
@@ -111,7 +127,7 @@ def generate_story_endpoint():
     data = request.json
     s3_folder_link = data.get('s3_folder_link')
     location = data.get('location')
-    api_key = dotenv.get_key(".env", "GEMINI_API_KEY")
+    api_key = ""
 
     if not s3_folder_link or not location:
         return jsonify({"status": "error", "error_message": "s3_folder_link and location are required"}), 400
