@@ -60,7 +60,7 @@ def download_files_from_s3_folder(s3_folder_link: str, download_dir: str) -> Non
 def generate_story(file_path: str, location: str, api_key: str, model_name: str = "gemini-1.5-pro") -> Dict[str, Any]:
     try:
         # Configure Gemini
-        genai.configure(api_key="")
+        genai.configure(api_key="AIzaSyCD7egvvRfwRC7RY2SdZg_MIWK3IG_QeaU")
         model = genai.GenerativeModel(model_name)
 
         # Determine if the file is a video or an image
@@ -127,7 +127,7 @@ def generate_story_endpoint():
     data = request.json
     s3_folder_link = data.get('s3_folder_link')
     location = data.get('location')
-    api_key = ""
+    api_key = "AIzaSyCD7egvvRfwRC7RY2SdZg_MIWK3IG_QeaU"
 
     if not s3_folder_link or not location:
         return jsonify({"status": "error", "error_message": "s3_folder_link and location are required"}), 400
