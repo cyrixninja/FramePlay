@@ -1,3 +1,3 @@
-.env
 .vercel
-kestra_workflow.yml
+__pycache__
+.env

@@ -1,0 +1,208 @@
+# kestra_workflow.yml
+id: frameflow_process
+namespace: frameflow
+description: Processing the Uploaded File and Generating the Output
+
+variables:
+  AWS_ACCESS_KEY:
+  AWS_SECRET_KEY: 
+  AWS_BUCKET:
+  AWS_REGION: 
+  GEMINI_API_KEY: 
+  LOCATION: "{{ inputs.location }}"
+tasks:
+  - id: get_video
+    type: io.kestra.plugin.aws.s3.Download
+    accessKeyId: "{{ vars.AWS_ACCESS_KEY }}"
+    secretKeyId: "{{ vars.AWS_SECRET_KEY }}"
+    region: "{{ vars.AWS_REGION }}"
+    bucket: "{{ vars.AWS_BUCKET }}"
+    key: "video.mp4"
+
+  - id: process_video_and_generate_script
+    type: io.kestra.plugin.scripts.python.Script
+    outputFiles:
+      - "story_output.txt"
+    script: |
+      import google.generativeai as genai
+      import time
+      import json
+      import mimetypes
+      import os
+      from kestra import Kestra
+      
+      video_path = "{{ outputs.get_video.uri }}"
+      location = "{{ vars.LOCATION }}"
+      api_key = "{{ vars.GEMINI_API_KEY }}"
+      
+      # Set mime type for video
+      mime_type = "video/mp4"
+      
+      print(f"Processing video: {video_path}")
+      genai.configure(api_key=api_key)
+      model = genai.GenerativeModel("gemini-1.5-pro")
+      
+      # Upload with explicit mime type
+      uploaded_file = genai.upload_file(
+          path=video_path,
+          mime_type=mime_type
+      )
+      
+      while uploaded_file.state.name == "PROCESSING":
+          print(".", end="", flush=True)
+          time.sleep(10)
+          uploaded_file = genai.get_file(uploaded_file.name)
+      
+      if uploaded_file.state.name == "FAILED":
+          raise ValueError("Video processing failed")
+      
+      prompt = """You are an Expert Videographer that helps to storytell moments.
+      1. Recognize the video and create a travel story about it. Add Personal Touch According to the Video
+      2. Location: {{ vars.LOCATION }}
+      3. Just return the reponse as in textual format
+      4. Don't return any comments or things like Sure . Don't include any /n or newline in response
+      """
+      
+      response = model.generate_content(
+          [uploaded_file, prompt],
+          request_options={"timeout": 600}
+      )
+      
+      result = {
+          "location": location,
+          "story": json.loads(response.text) if response.text.strip().startswith("{") else {
+              "story_text": response.text,
+              "recommended_voice_tone": "neutral"
+          },
+          "status": "success"
+      }
+      text_out = response.text
+      
+      output_file = "story_output.txt"
+      with open(output_file, "w", encoding="utf-8") as f:
+        f.write(text_out)
+      print(text_out)
+      
+    beforeCommands:
+      - pip install google-generativeai
+
+  - id: process_script_and_generate_audio
+    type: io.kestra.plugin.scripts.python.Script
+    outputFiles:
+      - "output_audio.mp3"
+    script: |
+      import boto3
+      import os
+      from kestra import Kestra
+
+      # Read the text file
+      with open("{{ outputs.process_video_and_generate_script.outputFiles['story_output.txt'] }}", "r", encoding="utf-8") as f:
+          story_content = f.read()
+
+      # Initialize AWS Polly client
+      polly_client = boto3.Session(
+          aws_access_key_id='{{ vars.AWS_ACCESS_KEY }}',
+          aws_secret_access_key='{{ vars.AWS_SECRET_KEY }}',
+          region_name='{{ vars.AWS_REGION }}'
+      ).client('polly')
+
+      try:
+          # Request speech synthesis
+          response = polly_client.synthesize_speech(
+              Text=story_content,
+              OutputFormat='mp3',
+              VoiceId='Joanna',  # Female voice
+              Engine='neural'     # Using neural engine for better quality
+          )
+
+          # Save audio file
+          audio_file = "output_audio.mp3"
+          with open(audio_file, 'wb') as f:
+              f.write(response['AudioStream'].read())
+
+          # Output results
+          Kestra.outputs({
+              "audio_file": audio_file,
+              "status": "success"
+          })
+
+      except Exception as e:
+          print(f"Error generating audio: {str(e)}")
+          raise e
+
+    beforeCommands:
+      - pip install boto3
+
+  - id: merge_video_audio
+    type: io.kestra.plugin.scripts.python.Script
+    outputFiles: 
+      - "final_output.mp4"
+    script: |
+      import ffmpeg
+      import os
+      from kestra import Kestra
+
+      # Get input files
+      video_file = "{{ outputs.get_video.uri }}"
+      audio_file = "{{ outputs.process_script_and_generate_audio.outputFiles['output_audio.mp3'] }}"
+      output_file = "final_output.mp4"
+
+
+      try:
+          # Get video duration
+          probe = ffmpeg.probe(video_file)
+          video_info = next(s for s in probe['streams'] if s['codec_type'] == 'video')
+          video_duration = float(video_info['duration'])
+          
+          # Create trimmed audio first
+          trimmed_audio = "trimmed_audio.mp3"
+          audio_stream = ffmpeg.input(audio_file)
+          audio_trim = ffmpeg.output(audio_stream, trimmed_audio, t=video_duration)
+          ffmpeg.run(audio_trim, overwrite_output=True)
+          
+          # Merge video with trimmed audio
+          video_stream = ffmpeg.input(video_file)
+          audio_stream = ffmpeg.input(trimmed_audio)
+          
+          stream = ffmpeg.output(
+              video_stream, 
+              audio_stream, 
+              output_file,
+              vcodec='copy',
+              acodec='aac'
+          )
+          
+          ffmpeg.run(stream, overwrite_output=True)
+          
+          # Cleanup temporary file
+          if os.path.exists(trimmed_audio):
+              os.remove(trimmed_audio)
+
+          Kestra.outputs({
+              "merged_file": output_file,
+              "video_duration": video_duration,
+              "status": "success"
+          })
+
+      except Exception as e:
+          print(f"Error merging files: {str(e)}")
+          raise e
+
+    beforeCommands:
+      - apk update
+      - apk add ffmpeg
+      - pip install ffmpeg-python
+
+  - id: upload_final_video
+    type: io.kestra.plugin.aws.s3.Upload
+    accessKeyId: "{{ vars.AWS_ACCESS_KEY }}"
+    secretKeyId: "{{ vars.AWS_SECRET_KEY }}"
+    region: "{{ vars.AWS_REGION }}"
+    bucket: "{{ vars.AWS_BUCKET }}"
+    key: "final_video.mp4"
+    from: "{{ outputs.merge_video_audio.outputFiles['final_output.mp4'] }}"
+
+triggers:
+  - id: webhook
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: frameplay
