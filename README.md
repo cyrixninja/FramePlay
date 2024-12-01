@@ -1,6 +1,10 @@
 # FramePlay
 ![FramePlay Banner](/assets/banner.png)
 
+From amazing pics to narrated videos in minutes. Share stories with AI magic.
+
+Wouldn't it be great to have a video of our entire trip narrated and generated with the click of a button? FramePlay aims to achieve this by leveraging the power of AI and various Google Cloud services.
+
 FramePlay is an innovative AI tool that transforms your videos and images into captivating stories. Our cutting-edge AI technology analyzes your media, creates a narrative, and produces a professionally edited video with narration. By combining advanced machine learning algorithms with creative storytelling techniques, FramePlay offers a unique way to bring your visual content to life.
 
 ## Key Features
