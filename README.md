@@ -69,6 +69,18 @@ FramePlay uses a sophisticated AI pipeline to turn your media into a compelling 
 2. **Create Page**: Allows users to upload their media files and create a story.
 3. **Working Page**: Explains how FramePlay works.
 
+## Kestra Workflow
+
+FramePlay uses Kestra for orchestrating the video processing workflow. The Kestra workflow is defined in the `kestra_workflow.yml` file and includes the following steps:
+
+1. **Download Video**: Downloads the uploaded video from the specified S3 bucket.
+2. **Process Video and Generate Script**: Uses Google Generative AI to analyze the video and generate a travel story script.
+3. **Generate Audio**: Converts the generated script into an audio file using AWS Polly.
+4. **Merge Video and Audio**: Merges the video with the generated audio using FFmpeg.
+5. **Upload Final Video**: Uploads the final video to the specified S3 bucket.
+
+The workflow is triggered by a webhook and ensures that the entire process from video upload to final video generation is automated and efficient.
+
 ## Contributing
 
 We welcome contributions to FramePlay! Please follow these steps to contribute:
@@ -91,3 +103,4 @@ We welcome contributions to FramePlay! Please follow these steps to contribute:
 ![2](/assets/screenshots/kestra2.png)
 ![3](/assets/screenshots/kestra3.png)
 ![4](/assets/screenshots/kestra4.png)
+
